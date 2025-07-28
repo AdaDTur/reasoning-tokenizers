@@ -12,12 +12,11 @@ from tokenizers import (
 
 from transformers import PreTrainedTokenizerFast
 
-
-dataset = load_dataset("wikitext", name="wikitext-2-raw-v1", split="train") # change this to culturax, train on diff langs
+ds = load_dataset("uonlp/CulturaX", "en")
 
 def get_training_corpus():
-    for i in range(0, len(dataset), 1000):
-        yield dataset[i : i + 1000]["text"]
+    for i in range(0, len(ds), 1000):
+        yield ds[i : i + 1000]["text"]
 
 ### WORDPIECE TOKENIZER ###
 
@@ -113,6 +112,9 @@ def unigram():
         mask_token="<mask>",
         padding_side="left",
     )
+
+def multiling():
+    pass
 
 if __name__ == "__main__":
     unigram()
