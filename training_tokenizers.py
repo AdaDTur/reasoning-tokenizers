@@ -57,7 +57,7 @@ def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
     
     for batch in get_training_corpus_char_threshold(ds):
         for text in batch:
-            tokens = tokenizer.encode(text).ids
+            tokens = tokenizer.encode(text)
             all_tokens.extend(tokens)
     
     all_tokens = np.array(all_tokens, dtype=np.uint16)
@@ -77,10 +77,6 @@ def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
 def wordpiece(ds, lang, use_memory_threshold=True):
     tokenizer = Tokenizer(models.WordPiece(unk_token="[UNK]"))
     tokenizer.normalizer = normalizers.BertNormalizer(lowercase=True)
-
-    pre_tokenizer = pre_tokenizers.Sequence(
-        [pre_tokenizers.WhitespaceSplit(), pre_tokenizers.Punctuation()]
-    )
     
     special_tokens = ["[UNK]", "[PAD]", "[CLS]", "[SEP]", "[MASK]"]
     trainer = trainers.WordPieceTrainer(vocab_size=25000, special_tokens=special_tokens)
@@ -88,7 +84,6 @@ def wordpiece(ds, lang, use_memory_threshold=True):
     corpus_func = get_training_corpus_memory_threshold if use_memory_threshold else get_training_corpus_char_threshold
     tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
     
-    encoding = tokenizer.encode("Let's test this tokenizer.")
     cls_token_id = tokenizer.token_to_id("[CLS]")
     sep_token_id = tokenizer.token_to_id("[SEP]")
 
@@ -97,10 +92,7 @@ def wordpiece(ds, lang, use_memory_threshold=True):
         pair=f"[CLS]:0 $A:0 [SEP]:0 $B:1 [SEP]:1",
         special_tokens=[("[CLS]", cls_token_id), ("[SEP]", sep_token_id)],
     )
-    print(cls_token_id, sep_token_id)
     tokenizer.decoder = decoders.WordPiece(prefix="##")
-
-    tokenizer.decode(encoding.ids)
     
     create_bin_files('wordpiece', ds, lang, tokenizer)
 
@@ -115,10 +107,8 @@ def bpe(ds, lang, use_memory_threshold=True):
     tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
     
     tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
-    sentence = "Let's test this tokenizer."
-    encoding = tokenizer.encode(sentence)
     tokenizer.decoder = decoders.ByteLevel()
-    print(tokenizer.decode(encoding.ids))
+
     wrapped_tokenizer = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
         bos_token="<|endoftext|>",
@@ -150,8 +140,6 @@ def unigram(ds, lang, use_memory_threshold=True):
     corpus_func = get_training_corpus_memory_threshold if use_memory_threshold else get_training_corpus_char_threshold
     tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
     
-    encoding = tokenizer.encode("Let's test this tokenizer.")
-    print(encoding.tokens)
     cls_token_id = tokenizer.token_to_id("<cls>")
     sep_token_id = tokenizer.token_to_id("<sep>")
     tokenizer.post_processor = processors.TemplateProcessing(
@@ -159,9 +147,7 @@ def unigram(ds, lang, use_memory_threshold=True):
         pair="$A:0 <sep>:0 $B:1 <sep>:1 <cls>:2",
         special_tokens=[("<sep>", sep_token_id), ("<cls>", cls_token_id)],
     )
-    encoding = tokenizer.encode("Let's test this tokenizer...", "on a pair of sentences!")
-    print(encoding.tokens)
-    print(encoding.type_ids)
+
     tokenizer.decoder = decoders.Metaspace()
     
     wrapped_tokenizer = PreTrainedTokenizerFast(
@@ -180,7 +166,7 @@ def unigram(ds, lang, use_memory_threshold=True):
 
 if __name__ == "__main__":
     langs = ['en', 'tr', 'es', 'fr', 'fi']
-    ds = load_dataset('parquet', data_files="culturax/en/en_part_00000.parquet")
+    ds = load_dataset('parquet', data_files="/home/mila/a/ada.tur/culturax/en/en_part_00000.parquet")
     bpe(ds, 'en')
     wordpiece(ds, 'en')
     unigram(ds, 'en')
