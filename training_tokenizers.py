@@ -58,7 +58,10 @@ def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
     for batch in get_training_corpus_char_threshold(ds):
         for text in batch:
             tokens = tokenizer.encode(text)
-            all_tokens.extend(tokens)
+            if hasattr(tokens, 'ids'):
+                all_tokens.extend(tokens.ids)
+            else:
+                all_tokens.extend(tokens)
     
     all_tokens = np.array(all_tokens, dtype=np.uint16)
     
@@ -66,8 +69,8 @@ def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
     train_tokens = all_tokens[:split_idx]
     val_tokens = all_tokens[split_idx:]
     
-    train_tokens.tofile(f'{name}_train.bin')
-    val_tokens.tofile(f'{name}_val.bin')
+    train_tokens.tofile(f'{name}_{lang}_train.bin')
+    val_tokens.tofile(f'{name}_{lang}_val.bin')
     
     print(f"Training tokens: {len(train_tokens):,}")
     print(f"Validation tokens: {len(val_tokens):,}")
@@ -166,7 +169,7 @@ def unigram(ds, lang, use_memory_threshold=True):
 
 if __name__ == "__main__":
     langs = ['en', 'tr', 'es', 'fr', 'fi']
-    ds = load_dataset('parquet', data_files="/home/mila/a/ada.tur/culturax/en/en_part_00000.parquet")
+    ds = load_dataset('parquet', data_files="culturax/en/en_part_00000.parquet")
     bpe(ds, 'en')
     wordpiece(ds, 'en')
     unigram(ds, 'en')
