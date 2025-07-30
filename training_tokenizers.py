@@ -168,8 +168,12 @@ def unigram(ds, lang, use_memory_threshold=True):
     create_bin_files('unigram', ds, lang, wrapped_tokenizer)
 
 if __name__ == "__main__":
-    langs = ['en', 'tr', 'es', 'fr', 'fi']
-    ds = load_dataset('parquet', data_files="/home/mila/a/ada.tur/culturax/en/en_part_00000.parquet")
-    bpe(ds, 'en')
-    wordpiece(ds, 'en')
-    unigram(ds, 'en')
+    langs = ['tr', 'es', 'fr', 'fi']
+
+    for lang in langs:
+        data_fp = f"/home/mila/a/ada.tur/culturax/{lang}/{lang}_part_00000.parquet"
+        ds = load_dataset('parquet', data_files=data_fp)
+
+        bpe(ds, lang)
+        wordpiece(ds, lang)
+        unigram(ds, lang)
