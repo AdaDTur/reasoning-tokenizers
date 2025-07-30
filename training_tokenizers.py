@@ -1,5 +1,6 @@
 import sys
 import psutil
+import numpy as np
 from datasets import load_dataset
 from tokenizers import (
     decoders,
@@ -51,15 +52,34 @@ def get_training_corpus_char_threshold(ds, char_limit=500_000_000):
         total_batches += 1
         yield batch
 
+def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
+    all_tokens = []
+    
+    for batch in get_training_corpus_char_threshold(ds):
+        for text in batch:
+            tokens = tokenizer.encode(text)
+            if hasattr(tokens, 'ids'):
+                all_tokens.extend(tokens.ids)
+            else:
+                all_tokens.extend(tokens)
+    
+    all_tokens = np.array(all_tokens, dtype=np.uint16)
+    
+    split_idx = int(len(all_tokens) * train_split)
+    train_tokens = all_tokens[:split_idx]
+    val_tokens = all_tokens[split_idx:]
+    
+    train_tokens.tofile(f'{name}_{lang}_train.bin')
+    val_tokens.tofile(f'{name}_{lang}_val.bin')
+    
+    print(f"Training tokens: {len(train_tokens):,}")
+    print(f"Validation tokens: {len(val_tokens):,}")
+
 ### WORDPIECE TOKENIZER ###
 
-def word_piece(ds, use_memory_threshold=True):
+def wordpiece(ds, lang, use_memory_threshold=True):
     tokenizer = Tokenizer(models.WordPiece(unk_token="[UNK]"))
     tokenizer.normalizer = normalizers.BertNormalizer(lowercase=True)
-
-    pre_tokenizer = pre_tokenizers.Sequence(
-        [pre_tokenizers.WhitespaceSplit(), pre_tokenizers.Punctuation()]
-    )
     
     special_tokens = ["[UNK]", "[PAD]", "[CLS]", "[SEP]", "[MASK]"]
     trainer = trainers.WordPieceTrainer(vocab_size=25000, special_tokens=special_tokens)
@@ -67,7 +87,6 @@ def word_piece(ds, use_memory_threshold=True):
     corpus_func = get_training_corpus_memory_threshold if use_memory_threshold else get_training_corpus_char_threshold
     tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
     
-    encoding = tokenizer.encode("Let's test this tokenizer.")
     cls_token_id = tokenizer.token_to_id("[CLS]")
     sep_token_id = tokenizer.token_to_id("[SEP]")
 
@@ -76,15 +95,13 @@ def word_piece(ds, use_memory_threshold=True):
         pair=f"[CLS]:0 $A:0 [SEP]:0 $B:1 [SEP]:1",
         special_tokens=[("[CLS]", cls_token_id), ("[SEP]", sep_token_id)],
     )
-    print(cls_token_id, sep_token_id)
     tokenizer.decoder = decoders.WordPiece(prefix="##")
-
-    tokenizer.decode(encoding.ids)
-    tokenizer.save("wordpiece_english.json")
+    
+    create_bin_files('wordpiece', ds, lang, tokenizer)
 
 ### BPE TOKENIZER ###
 
-def bpe(ds, use_memory_threshold=True):
+def bpe(ds, lang, use_memory_threshold=True):
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     trainer = trainers.BpeTrainer(vocab_size=25000, special_tokens=["<|endoftext|>"])
@@ -93,20 +110,19 @@ def bpe(ds, use_memory_threshold=True):
     tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
     
     tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
-    sentence = "Let's test this tokenizer."
-    encoding = tokenizer.encode(sentence)
-    start, end = encoding.offsets[4]
     tokenizer.decoder = decoders.ByteLevel()
-    print(tokenizer.decode(encoding.ids))
+
     wrapped_tokenizer = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
         bos_token="<|endoftext|>",
         eos_token="<|endoftext|>",
     )
+    
+    create_bin_files('bpe', ds, lang, wrapped_tokenizer)
 
 ### UNIGRAM TOKENIZER ###
 
-def unigram(ds, use_memory_threshold=True):
+def unigram(ds, lang, use_memory_threshold=True):
     tokenizer = Tokenizer(models.Unigram())
     tokenizer.normalizer = normalizers.Sequence(
         [
@@ -127,8 +143,6 @@ def unigram(ds, use_memory_threshold=True):
     corpus_func = get_training_corpus_memory_threshold if use_memory_threshold else get_training_corpus_char_threshold
     tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
     
-    encoding = tokenizer.encode("Let's test this tokenizer.")
-    print(encoding.tokens)
     cls_token_id = tokenizer.token_to_id("<cls>")
     sep_token_id = tokenizer.token_to_id("<sep>")
     tokenizer.post_processor = processors.TemplateProcessing(
@@ -136,9 +150,7 @@ def unigram(ds, use_memory_threshold=True):
         pair="$A:0 <sep>:0 $B:1 <sep>:1 <cls>:2",
         special_tokens=[("<sep>", sep_token_id), ("<cls>", cls_token_id)],
     )
-    encoding = tokenizer.encode("Let's test this tokenizer...", "on a pair of sentences!")
-    print(encoding.tokens)
-    print(encoding.type_ids)
+
     tokenizer.decoder = decoders.Metaspace()
     
     wrapped_tokenizer = PreTrainedTokenizerFast(
@@ -152,12 +164,12 @@ def unigram(ds, use_memory_threshold=True):
         mask_token="<mask>",
         padding_side="left",
     )
+    
+    create_bin_files('unigram', ds, lang, wrapped_tokenizer)
 
 if __name__ == "__main__":
-    langs = ['en', 'tr']
-    ds = load_dataset('parquet', data_files="culturax/en/en_part_00000.parquet")
-
-    # unigram(use_memory_threshold=True)   # Uses memory threshold (2GB)
-    # unigram(use_memory_threshold=False)  # Uses character threshold (~2GB worth of chars)
-    unigram(ds, use_memory_threshold=True)
-    
+    langs = ['en', 'tr', 'es', 'fr', 'fi']
+    ds = load_dataset('parquet', data_files="/home/mila/a/ada.tur/culturax/en/en_part_00000.parquet")
+    bpe(ds, 'en')
+    wordpiece(ds, 'en')
+    unigram(ds, 'en')
