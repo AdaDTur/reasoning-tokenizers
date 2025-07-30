@@ -13,7 +13,9 @@ from tokenizers import (
     Regex
 )
 
-from transformers import PreTrainedTokenizerFast
+import pickle
+
+from transformers import PreTrainedTokenizerFast, AutoTokenizer
 
 def get_training_corpus_memory_threshold(ds, memory_limit_gb=0.5):
     memory_limit_bytes = memory_limit_gb * 1024 * 1024 * 1024
@@ -78,6 +80,7 @@ def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
 ### WORDPIECE TOKENIZER ###
 
 def wordpiece(ds, lang, use_memory_threshold=True):
+    print("Starting WordPiece training")
     tokenizer = Tokenizer(models.WordPiece(unk_token="[UNK]"))
     tokenizer.normalizer = normalizers.BertNormalizer(lowercase=True)
     
@@ -96,12 +99,13 @@ def wordpiece(ds, lang, use_memory_threshold=True):
         special_tokens=[("[CLS]", cls_token_id), ("[SEP]", sep_token_id)],
     )
     tokenizer.decoder = decoders.WordPiece(prefix="##")
-    
+    print("Finished WordPiece training")
     create_bin_files('wordpiece', ds, lang, tokenizer)
 
 ### BPE TOKENIZER ###
 
 def bpe(ds, lang, use_memory_threshold=True):
+    print("Starting BPE training")
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     trainer = trainers.BpeTrainer(vocab_size=25000, special_tokens=["<|endoftext|>"])
@@ -117,12 +121,13 @@ def bpe(ds, lang, use_memory_threshold=True):
         bos_token="<|endoftext|>",
         eos_token="<|endoftext|>",
     )
-    
+    print("Finished BPE training")
     create_bin_files('bpe', ds, lang, wrapped_tokenizer)
 
 ### UNIGRAM TOKENIZER ###
 
 def unigram(ds, lang, use_memory_threshold=True):
+    print("Starting Unigram training")
     tokenizer = Tokenizer(models.Unigram())
     tokenizer.normalizer = normalizers.Sequence(
         [
@@ -164,7 +169,7 @@ def unigram(ds, lang, use_memory_threshold=True):
         mask_token="<mask>",
         padding_side="left",
     )
-    
+    print("Finished Unigram training")
     create_bin_files('unigram', ds, lang, wrapped_tokenizer)
 
 if __name__ == "__main__":
