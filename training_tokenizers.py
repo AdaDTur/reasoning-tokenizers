@@ -69,8 +69,8 @@ def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
     train_tokens = all_tokens[:split_idx]
     val_tokens = all_tokens[split_idx:]
     
-    train_tokens.tofile(f'{name}_{lang}_train.bin')
-    val_tokens.tofile(f'{name}_{lang}_val.bin')
+    train_tokens.tofile(f'../tokenizer_bins/{name}_{lang}_train.bin')
+    val_tokens.tofile(f'../tokenizer_bins/{name}_{lang}_val.bin')
     
     print(f"Training tokens: {len(train_tokens):,}")
     print(f"Validation tokens: {len(val_tokens):,}")
