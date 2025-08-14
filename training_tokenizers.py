@@ -1,10 +1,7 @@
-import sys
 import psutil
 import numpy as np
 from datasets import load_dataset
 import os
-sys.path.append(os.path.expanduser('~/morphscore'))
-from morphscore import MorphScore
 import pickle
 from transformers import PreTrainedTokenizerFast, AutoTokenizer
 from tokenizers import (
@@ -37,7 +34,7 @@ def get_training_corpus_memory_threshold(ds, memory_limit_gb=0.5):
         total_batches += 1
         yield batch
 
-def get_training_corpus_char_threshold(ds, char_limit=500_000_000):
+def get_training_corpus_char_threshold(ds, char_limit=1_000_000_000):
     batch_size = 1000
     total_chars = 0
     total_batches = 0
@@ -73,8 +70,8 @@ def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
     train_tokens = all_tokens[:split_idx]
     val_tokens = all_tokens[split_idx:]
     
-    train_tokens.tofile(f'../tokenizer_bins/{name}_{lang}_train.bin')
-    val_tokens.tofile(f'../tokenizer_bins/{name}_{lang}_val.bin')
+    train_tokens.tofile(f'tokenizer_bins/{name}_{lang}_train.bin')
+    val_tokens.tofile(f'tokenizer_bins/{name}_{lang}_val.bin')
     
     print(f"Training tokens: {len(train_tokens):,}")
     print(f"Validation tokens: {len(val_tokens):,}")
@@ -105,16 +102,13 @@ def wordpiece(ds, lang, use_memory_threshold=True):
 
     tokenizer.decoder = decoders.WordPiece(prefix="##")
 
-    evaluate_morph(lang, tokenizer)
-    evaluate_generic(ds, tokenizer)
-
     #create_bin_files('wordpiece', ds, lang, tokenizer)
 
     #print("Created bin files!")
 
 ### BPE TOKENIZER ###
 
-def bpe(ds, lang, use_memory_threshold=True):
+def bpe(ds, lang, use_memory_threshold=False):
     print("Starting BPE training")
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
@@ -134,12 +128,9 @@ def bpe(ds, lang, use_memory_threshold=True):
         eos_token="<|endoftext|>",
     )
 
-    evaluate_morph(lang, wrapped_tokenizer)
-    evaluate_generic(ds, wrapped_tokenizer)
+    create_bin_files('bpe', ds, lang, wrapped_tokenizer)
 
-    #create_bin_files('bpe', ds, lang, wrapped_tokenizer)
-
-    #print("Created bin files!")
+    print("Created bin files!")
 
 ### UNIGRAM TOKENIZER ###
 
@@ -195,46 +186,11 @@ def unigram(ds, lang, use_memory_threshold=True):
 
     #print("Created bin files!")
 
-def evaluate_morph(lang, tokenizer):
-    morph_lang_map = {'en': 'eng', 'es': 'spa', 'fr': 'fra', 'tr': 'tur', 'fi': 'fin'}
-    morph_score = MorphScore(language_subset=[{morph_lang_map[lang]}],
-        by_split=False, 
-        freq_scale=True,
-        exclude_single_tok=False)
-    result, df = morph_score.eval(tokenizer, return_df=True)
-    print(result)
-    print(df)
-
-def evaluate_generic(ds, tokenizer):
-    total_tokens = 0
-    total_words = 0
-    total_sentences = 0
-    word_fragments = 0
-
-    for sample in ds:
-        text = sample["text"]
-        if not text.strip(): continue
-        encoding = tokenizer.encode(text)
-        tokens = encoding.tokens
-        words = text.split()
-
-        total_tokens += len(tokens)
-        total_words += len(words)
-        total_sentences += text.count('.')  # crude
-        for word in words:
-            subtoks = tokenizer.encode(word).tokens
-            if len(subtoks) > 1:
-                word_fragments += 1
-
-    print("Avg tokens per sentence:", total_tokens / total_sentences)
-    print("Avg tokens per word:", total_tokens / total_words)
-    print("Word fragmentation rate:", word_fragments / total_words)
-
 if __name__ == "__main__":
-    langs = ['en', 'tr']
+    langs = ['en']
 
     for lang in langs:
-        data_fp = f"/home/mila/a/ada.tur/culturax/{lang}/{lang}_part_00000.parquet"
+        data_fp = f"culturax/{lang}/{lang}_part_00000.parquet"
         ds = load_dataset('parquet', data_files=data_fp)
 
         bpe(ds, lang)
