@@ -34,7 +34,7 @@ def get_training_corpus_memory_threshold(ds, memory_limit_gb=0.5):
         total_batches += 1
         yield batch
 
-def get_training_corpus_char_threshold(ds, char_limit=1_000_000_000):
+def get_training_corpus_char_threshold(ds, char_limit=10_000_000_000):
     batch_size = 1000
     total_chars = 0
     total_batches = 0
