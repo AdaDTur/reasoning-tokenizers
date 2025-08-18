@@ -2,8 +2,7 @@ import psutil
 import numpy as np
 from datasets import load_dataset
 import os
-import pickle
-from transformers import PreTrainedTokenizerFast, AutoTokenizer
+from transformers import PreTrainedTokenizerFast
 from tokenizers import (
     decoders,
     models,
@@ -15,120 +14,150 @@ from tokenizers import (
     Regex
 )
 
-def get_training_corpus_memory_threshold(ds, memory_limit_gb=0.5):
-    memory_limit_bytes = memory_limit_gb * 1024 * 1024 * 1024
-    batch_size = 1000
-    total_batches = 0
-    
-    for i in range(0, len(ds['train']), batch_size):
-        process = psutil.Process()
-        current_memory = process.memory_info().rss
-        
-        if current_memory > memory_limit_bytes:
-            print(f"Memory threshold reached: {current_memory / (1024**3):.2f} GB")
-            print(f"Total batches processed: {total_batches}")
-            break
-            
-        batch = ds['train'][i : i + batch_size]["text"]
-        total_batches += 1
-        yield batch
+def batch_iter_texts(ds_split, batch_size=1000, text_builder=None, text_col="text"):
+    n = len(ds_split)
+    for i in range(0, n, batch_size):
+        batch = ds_split[i:i+batch_size]
+        if text_builder is not None:
+            yield [text_builder(batch[j]) for j in range(len(batch[text_col if text_col in batch.column_names else batch.column_names[0]]))]
+        else:
+            yield batch[text_col]
 
-def get_training_corpus_char_threshold(ds, char_limit=10_000_000_000):
-    batch_size = 1000
+def culturaX_with_char_limit(ds, char_limit=10_000_000_000, batch_size=1000):
     total_chars = 0
-    total_batches = 0
-    
-    for i in range(0, len(ds['train']), batch_size):
-        batch = ds['train'][i : i + batch_size]["text"]
-        
-        batch_chars = sum(len(text) for text in batch)
-        
+    for batch in batch_iter_texts(ds['train'], batch_size=batch_size, text_builder=None, text_col="text"):
+        batch_chars = sum(len(x) for x in batch)
         if total_chars + batch_chars > char_limit:
-            print(f"Character threshold reached: {total_chars:,} characters")
-            print(f"Total batches processed: {total_batches}")
+            remaining = char_limit - total_chars
+            out = []
+            for x in batch:
+                if remaining <= 0:
+                    break
+                if len(x) <= remaining:
+                    out.append(x)
+                    remaining -= len(x)
+                else:
+                    out.append(x[:remaining])
+                    remaining = 0
+            if out:
+                yield out
             break
-            
-        total_chars += batch_chars
-        total_batches += 1
-        yield batch
+        else:
+            total_chars += batch_chars
+            yield batch
 
-def create_bin_files(name, ds, lang, tokenizer, train_split=0.9):
+def gsm8k_text_builder(row):
+    # Prefer existing 'text' if present; otherwise build Q/A
+    # Rows come as columnar dicts, so access via row['field'][idx] is handled in batch_iter_texts
+    # Here we accept a "row" that is one example dict (provided by batch_iter_texts)
+    # But batch_iter_texts passes the full batch; to keep simple, we reconstruct using closures below.
+    raise NotImplementedError  # placeholder (we’ll override via a closure per batch)
+
+def mbpp_text_builder(row):
+    raise NotImplementedError
+
+def build_rowwise_builder(columns, kind):
+    if kind == "gsm8k":
+        has_text = "text" in columns
+        has_q = "question" in columns
+        has_a = "answer" in columns
+        def fn(batch, idx):
+            if has_text:
+                return batch["text"][idx]
+            q = batch["question"][idx] if has_q else ""
+            a = batch["answer"][idx] if has_a else ""
+            return f"Q:\n{q}\n\nA:\n{a}"
+        return fn
+    elif kind == "mbpp":
+        has_text = "text" in columns
+        has_prompt = "prompt" in columns
+        has_code = "code" in columns or "solution" in columns
+        code_field = "code" if "code" in columns else ("solution" if "solution" in columns else None)
+        def fn(batch, idx):
+            if has_text:
+                return batch["text"][idx]
+            prompt = batch["prompt"][idx] if has_prompt else ""
+            code = batch[code_field][idx] if code_field else ""
+            return f"# Prompt\n{prompt}\n\n# Solution\n{code}"
+        return fn
+    else:
+        raise ValueError("unknown kind")
+
+def batch_iter_texts_flexible(ds_split, kind, batch_size=1000):
+    n = len(ds_split)
+    cols = ds_split.column_names
+    for i in range(0, n, batch_size):
+        batch = ds_split[i:i+batch_size]
+        builder = build_rowwise_builder(cols, kind)
+        m = len(batch[cols[0]]) if len(cols) else 0
+        yield [builder(batch, j) for j in range(m)]
+
+def combined_corpus_iter(culturax_ds, gsm8k_ds, mbpp_ds, char_limit, batch_size=1000):
+    for batch in culturaX_with_char_limit(culturax_ds, char_limit=char_limit, batch_size=batch_size):
+        yield batch
+    if gsm8k_ds is not None and 'train' in gsm8k_ds:
+        for batch in batch_iter_texts_flexible(gsm8k_ds['train'], kind="gsm8k", batch_size=batch_size):
+            yield batch
+    if mbpp_ds is not None and 'train' in mbpp_ds:
+        for batch in batch_iter_texts_flexible(mbpp_ds['train'], kind="mbpp", batch_size=batch_size):
+            yield batch
+
+def create_bin_files(name, lang, tokenizer, iterator, train_split=0.9):
     all_tokens = []
-    
-    for batch in get_training_corpus_char_threshold(ds):
+    for batch in iterator:
         for text in batch:
             tokens = tokenizer.encode(text)
             if hasattr(tokens, 'ids'):
                 all_tokens.extend(tokens.ids)
             else:
                 all_tokens.extend(tokens)
-    
     all_tokens = np.array(all_tokens, dtype=np.uint16)
-    
     split_idx = int(len(all_tokens) * train_split)
     train_tokens = all_tokens[:split_idx]
     val_tokens = all_tokens[split_idx:]
-    
+    os.makedirs('tokenizer_bins', exist_ok=True)
     train_tokens.tofile(f'tokenizer_bins/{name}_{lang}_train.bin')
     val_tokens.tofile(f'tokenizer_bins/{name}_{lang}_val.bin')
-    
     print(f"Training tokens: {len(train_tokens):,}")
     print(f"Validation tokens: {len(val_tokens):,}")
 
-### WORDPIECE TOKENIZER ###
+### TOKENIZERS ###
 
-def wordpiece(ds, lang, use_memory_threshold=True):
-    print("Starting WordPiece training")
-    tokenizer = Tokenizer(models.WordPiece(unk_token="[UNK]"))
-    tokenizer.normalizer = normalizers.BertNormalizer(lowercase=True)
-    
-    special_tokens = ["[UNK]", "[PAD]", "[CLS]", "[SEP]", "[MASK]"]
-    trainer = trainers.WordPieceTrainer(vocab_size=25000, special_tokens=special_tokens)
-    
-    corpus_func = get_training_corpus_memory_threshold if use_memory_threshold else get_training_corpus_char_threshold
-    tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
-
-    print("Finished WordPiece training")
-    
-    cls_token_id = tokenizer.token_to_id("[CLS]")
-    sep_token_id = tokenizer.token_to_id("[SEP]")
-
-    tokenizer.post_processor = processors.TemplateProcessing(
-        single=f"[CLS]:0 $A:0 [SEP]:0",
-        pair=f"[CLS]:0 $A:0 [SEP]:0 $B:1 [SEP]:1",
-        special_tokens=[("[CLS]", cls_token_id), ("[SEP]", sep_token_id)],
-    )
-
-    tokenizer.decoder = decoders.WordPiece(prefix="##")
-
-    #create_bin_files('wordpiece', ds, lang, tokenizer)
-
-    #print("Created bin files!")
-
-### BPE TOKENIZER ###
-
-def bpe(ds, lang, use_memory_threshold=False):
+def bpe(corpus_iterator, lang):
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     trainer = trainers.BpeTrainer(vocab_size=25000, special_tokens=["<|endoftext|>"])
-
-    corpus_func = get_training_corpus_memory_threshold if use_memory_threshold else get_training_corpus_char_threshold
-    tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
+    tokenizer.train_from_iterator(corpus_iterator, trainer=trainer)
     tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
     tokenizer.decoder = decoders.ByteLevel()
 
-    wrapped_tokenizer = PreTrainedTokenizerFast(
+    wrapped = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
         bos_token="<|endoftext|>",
         eos_token="<|endoftext|>",
     )
-
     os.makedirs(f"tokenizer_{lang}", exist_ok=True)
-    wrapped_tokenizer.save_pretrained(f"tokenizer_{lang}")
+    wrapped.save_pretrained(f"tokenizer_{lang}")
+    return wrapped
 
-### UNIGRAM TOKENIZER ###
+def wordpiece(corpus_iterator, lang):
+    print("Starting WordPiece training")
+    tokenizer = Tokenizer(models.WordPiece(unk_token="[UNK]"))
+    tokenizer.normalizer = normalizers.BertNormalizer(lowercase=True)
+    special_tokens = ["[UNK]", "[PAD]", "[CLS]", "[SEP]", "[MASK]"]
+    trainer = trainers.WordPieceTrainer(vocab_size=25000, special_tokens=special_tokens)
+    tokenizer.train_from_iterator(corpus_iterator, trainer=trainer)
+    print("Finished WordPiece training")
+    cls_id = tokenizer.token_to_id("[CLS]")
+    sep_id = tokenizer.token_to_id("[SEP]")
+    tokenizer.post_processor = processors.TemplateProcessing(
+        single=f"[CLS]:0 $A:0 [SEP]:0",
+        pair=f"[CLS]:0 $A:0 [SEP]:0 $B:1 [SEP]:1",
+        special_tokens=[("[CLS]", cls_id), ("[SEP]", sep_id)],
+    )
+    tokenizer.decoder = decoders.WordPiece(prefix="##")
 
-def unigram(ds, lang, use_memory_threshold=True):
+def unigram(corpus_iterator, lang):
     print("Starting Unigram training")
     tokenizer = Tokenizer(models.Unigram())
     tokenizer.normalizer = normalizers.Sequence(
@@ -146,47 +175,39 @@ def unigram(ds, lang, use_memory_threshold=True):
         vocab_size=25000, special_tokens=special_tokens, unk_token="<unk>"
     )
     tokenizer.model = models.Unigram()
-    
-    corpus_func = get_training_corpus_memory_threshold if use_memory_threshold else get_training_corpus_char_threshold
-    tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
-
+    tokenizer.train_from_iterator(corpus_iterator, trainer=trainer)
     print("Finished Unigram training")
-    
-    cls_token_id = tokenizer.token_to_id("<cls>")
-    sep_token_id = tokenizer.token_to_id("<sep>")
+    cls_id = tokenizer.token_to_id("<cls>")
+    sep_id = tokenizer.token_to_id("<sep>")
     tokenizer.post_processor = processors.TemplateProcessing(
         single="$A:0 <sep>:0 <cls>:2",
         pair="$A:0 <sep>:0 $B:1 <sep>:1 <cls>:2",
-        special_tokens=[("<sep>", sep_token_id), ("<cls>", cls_token_id)],
+        special_tokens=[("<sep>", sep_id), ("<cls>", cls_id)],
     )
-
     tokenizer.decoder = decoders.Metaspace()
-    
-    wrapped_tokenizer = PreTrainedTokenizerFast(
-        tokenizer_object=tokenizer,
-        bos_token="<s>",
-        eos_token="</s>",
-        unk_token="<unk>",
-        pad_token="<pad>",
-        cls_token="<cls>",
-        sep_token="<sep>",
-        mask_token="<mask>",
-        padding_side="left",
-    )
-    evaluate_morph(lang, wrapped_tokenizer)
-    evaluate_generic(ds, wrapped_tokenizer)
-
-    #create_bin_files('unigram', ds, lang, wrapped_tokenizer)
-
-    #print("Created bin files!")
 
 if __name__ == "__main__":
     langs = ['en']
-
     for lang in langs:
-        data_fp = f"culturax/{lang}/{lang}_part_00000.parquet"
-        ds = load_dataset('parquet', data_files=data_fp)
+        culturax_fp = f"culturax/{lang}/{lang}_part_00000.parquet"
+        gsm8k_train_fp = "gsm8k_train.parquet"
+        mbpp_train_fp = "mbpp_train.parquet"
 
-        bpe(ds, lang)
-        #wordpiece(ds, lang)
-        #unigram(ds, lang)
+        culturax_ds = load_dataset('parquet', data_files=culturax_fp)
+        gsm8k_ds = load_dataset('parquet', data_files={"train": gsm8k_train_fp})
+        mbpp_ds = load_dataset('parquet', data_files={"train": mbpp_train_fp})
+
+        corpus_iter = combined_corpus_iter(
+            culturax_ds,
+            gsm8k_ds,
+            mbpp_ds,
+            char_limit=10_000_000_000,
+            batch_size=1000
+        )
+
+        tok = bpe(corpus_iter, lang)
+
+        corpus_iter_for_bins = combined_corpus_iter(
+            culturax_ds, gsm8k_ds, mbpp_ds, char_limit=10_000_000_000, batch_size=1000
+        )
+        create_bin_files('bpe', lang, tok, corpus_iter_for_bins, train_split=0.9)
