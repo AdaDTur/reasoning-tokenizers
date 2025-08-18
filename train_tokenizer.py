@@ -15,7 +15,6 @@ from tokenizers import (
     Regex
 )
 
-
 def get_training_corpus_memory_threshold(ds, memory_limit_gb=0.5):
     memory_limit_bytes = memory_limit_gb * 1024 * 1024 * 1024
     batch_size = 1000
@@ -109,16 +108,12 @@ def wordpiece(ds, lang, use_memory_threshold=True):
 ### BPE TOKENIZER ###
 
 def bpe(ds, lang, use_memory_threshold=False):
-    print("Starting BPE training")
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     trainer = trainers.BpeTrainer(vocab_size=25000, special_tokens=["<|endoftext|>"])
-    
+
     corpus_func = get_training_corpus_memory_threshold if use_memory_threshold else get_training_corpus_char_threshold
     tokenizer.train_from_iterator(corpus_func(ds), trainer=trainer)
-
-    print("Finished BPE training")
-    
     tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
     tokenizer.decoder = decoders.ByteLevel()
 
@@ -128,9 +123,8 @@ def bpe(ds, lang, use_memory_threshold=False):
         eos_token="<|endoftext|>",
     )
 
-    create_bin_files('bpe', ds, lang, wrapped_tokenizer)
-
-    print("Created bin files!")
+    os.makedirs(f"tokenizer_{lang}", exist_ok=True)
+    wrapped_tokenizer.save_pretrained(f"tokenizer_{lang}")
 
 ### UNIGRAM TOKENIZER ###
 
