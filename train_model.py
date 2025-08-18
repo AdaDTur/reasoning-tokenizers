@@ -8,8 +8,8 @@ using the torchrun utility provided by PyTorch.
 To run on a single GPU, example:
 $ python train.py --batch_size=32 --compile=False
 
-To run with DDP on 4 gpus on 1 node, example:
-$ torchrun --standalone --nproc_per_node=4 train_model.py
+To run with DDP on 8 gpus on 1 node, example:
+$ torchrun --standalone --nproc_per_node=8 train_model.py
 """
 
 import os
@@ -39,9 +39,9 @@ def train(
     # wandb logging
     wandb_log: bool = True,               # disabled by default
     wandb_project: str = 'reasoning-tokenizers',
-    wandb_run_name: str = 'bpe-en-2',          # 'run' + str(time.time())
+    wandb_run_name: str = 'bpe-en-with-math-and-code',          # 'run' + str(time.time())
     # data
-    dataset: str = 'tokenizer_bins/',
+    dataset: str = 'tokenizers/bpe/en',
     tokenized_training_input_file: str = 'bpe_en_train.bin',
     tokenized_validation_input_file: str = 'bpe_en_val.bin',
     gradient_accumulation_steps: int = 40, # 5 * 8, used to simulate larger batch sizes
