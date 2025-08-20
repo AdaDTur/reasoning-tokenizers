@@ -133,7 +133,7 @@ def run_mmlu_only(scorer: LocalScorer, limit_per_subset: Optional[int] = None) -
 
 def main():
     tok_env = os.environ.get("TOKENIZER_JSON", "")
-    tokenizer_json = tok_env if tok_env else os.path.join("tokenizer", "tokenizer.json")
+    tokenizer_json = tok_env if tok_env else os.path.join("tokenizers/bpe/en", "tokenizer.json")
     tok = Tok(tokenizer_json)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ckpt = _load_checkpoint("out", map_location="cpu")
