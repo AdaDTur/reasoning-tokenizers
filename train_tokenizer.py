@@ -47,11 +47,7 @@ def culturaX_with_char_limit(ds, char_limit=10_000_000_000, batch_size=1000):
             yield batch
 
 def gsm8k_text_builder(row):
-    # Prefer existing 'text' if present; otherwise build Q/A
-    # Rows come as columnar dicts, so access via row['field'][idx] is handled in batch_iter_texts
-    # Here we accept a "row" that is one example dict (provided by batch_iter_texts)
-    # But batch_iter_texts passes the full batch; to keep simple, we reconstruct using closures below.
-    raise NotImplementedError  # placeholder (we’ll override via a closure per batch)
+    raise NotImplementedError
 
 def mbpp_text_builder(row):
     raise NotImplementedError
@@ -121,8 +117,6 @@ def create_bin_files(name, lang, tokenizer, iterator, train_split=0.9):
     print(f"Training tokens: {len(train_tokens):,}")
     print(f"Validation tokens: {len(val_tokens):,}")
 
-### TOKENIZERS ###
-
 def bpe(corpus_iterator, lang):
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
@@ -130,7 +124,6 @@ def bpe(corpus_iterator, lang):
     tokenizer.train_from_iterator(corpus_iterator, trainer=trainer)
     tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
     tokenizer.decoder = decoders.ByteLevel()
-
     wrapped = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
         bos_token="<|endoftext|>",
@@ -156,6 +149,11 @@ def wordpiece(corpus_iterator, lang):
         special_tokens=[("[CLS]", cls_id), ("[SEP]", sep_id)],
     )
     tokenizer.decoder = decoders.WordPiece(prefix="##")
+    wrapped = PreTrainedTokenizerFast(
+        tokenizer_object=tokenizer
+    )
+    wrapped.save_pretrained(f"tokenizers/wordpiece/wordpiece_{lang}")
+    return wrapped
 
 def unigram(corpus_iterator, lang):
     print("Starting Unigram training")
@@ -186,6 +184,21 @@ def unigram(corpus_iterator, lang):
     )
     tokenizer.decoder = decoders.Metaspace()
 
+def char_level(corpus_iterator, lang):
+    specials = ["<unk>"]
+    charset = set()
+    for batch in corpus_iterator:
+        for text in batch:
+            charset.update(list(text))
+    vocab = {tok: i for i, tok in enumerate(specials + sorted(charset))}
+    model = models.WordLevel(vocab=vocab, unk_token="<unk>")
+    tokenizer = Tokenizer(model)
+    tokenizer.pre_tokenizer = pre_tokenizers.Split(Regex(r""), behavior="isolated")
+    wrapped = PreTrainedTokenizerFast(tokenizer_object=tokenizer, unk_token="<unk>")
+    os.makedirs(f"tokenizers/char/char_{lang}", exist_ok=True)
+    wrapped.save_pretrained(f"tokenizers/char/char_{lang}")
+    return wrapped
+
 if __name__ == "__main__":
     langs = ['en']
     for lang in langs:
@@ -205,9 +218,9 @@ if __name__ == "__main__":
             batch_size=1000
         )
 
-        tok = bpe(corpus_iter, lang)
+        tok = char_level(corpus_iter, lang)
 
         corpus_iter_for_bins = combined_corpus_iter(
             culturax_ds, gsm8k_ds, mbpp_ds, char_limit=10_000_000_000, batch_size=1000
         )
-        create_bin_files('bpe', lang, tok, corpus_iter_for_bins, train_split=0.9)
+        create_bin_files('char', lang, tok, corpus_iter_for_bins, train_split=0.9)
