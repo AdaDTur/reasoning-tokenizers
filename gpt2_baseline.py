@@ -13,14 +13,14 @@ tokenizer.pad_token = tokenizer.eos_token
 
 def generate_answer(prompt, max_new_tokens=64):
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
-    outputs = model.generate(**inputs, max_new_tokens=max_new_tokens)
+    outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, pad_token_id=tokenizer.eos_token_id)
     decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return decoded[len(prompt):].strip()
 
 def eval_mmlu():
-    ds = load_dataset("hendrycks_test", "all", split="test")
+    ds = load_dataset("cais/mmlu", "all")
     correct, total = 0, 0
-    for ex in ds:
+    for ex in ds['test']:
         q = ex["question"]
         choices = ex["choices"]
         gold = ex["answer"]
