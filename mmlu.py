@@ -140,7 +140,8 @@ def main():
     model = _init_model_from_checkpoint(ckpt, device=device)
     scorer = LocalScorer(model=model, tok=tok, device=device)
     results = run_mmlu_only(scorer, limit_per_subset=None)
-    print(json.dumps(results, indent=2, sort_keys=True))
+    with open('output.json', 'w') as fp:
+        json.dumps(results, fp, indent=2, sort_keys=True)
 
 if __name__ == "__main__":
     main()
