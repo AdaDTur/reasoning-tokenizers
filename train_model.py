@@ -9,7 +9,7 @@ To run on a single GPU, example:
 $ python train.py --batch_size=32 --compile=False
 
 To run with DDP on 8 gpus on 1 node, example:
-$ torchrun --standalone --nproc_per_node=8 train_model.py
+$ torchrun --standalone --nproc_per_node=4 train_model.py
 """
 
 import os
@@ -29,7 +29,7 @@ from utils import get_batch, estimate_loss, get_lr
 
 def train(
     # I/O
-    out_dir: str = 'out',
+    out_dir: str = '.gitignore/out',
     eval_interval: int = 2000,
     log_interval: int = 1,
     eval_iters: int = 200,
@@ -39,11 +39,11 @@ def train(
     # wandb logging
     wandb_log: bool = True,               # disabled by default
     wandb_project: str = 'reasoning-tokenizers',
-    wandb_run_name: str = 'bpe-en-with-math-and-code',          # 'run' + str(time.time())
+    wandb_run_name: str = 'unigram-en',          # 'run' + str(time.time())
     # data
-    dataset: str = 'tokenizers/bpe/en',
-    tokenized_training_input_file: str = 'bpe_en_train.bin',
-    tokenized_validation_input_file: str = 'bpe_en_val.bin',
+    dataset: str = '.gitignore/tokenizers/unigram/en',
+    tokenized_training_input_file: str = 'unigram_en_train.bin',
+    tokenized_validation_input_file: str = 'unigram_en_val.bin',
     gradient_accumulation_steps: int = 40, # 5 * 8, used to simulate larger batch sizes
     batch_size = 12,                       # if gradient_accumulation_steps > 1, this is the micro-batch size
     block_size = 1024,
@@ -56,7 +56,7 @@ def train(
     bias: bool = False,                    # do we use bias inside LayerNorm and Linear layers?
     # adamw optimizer
     learning_rate: float = 6e-4,           # max learning rate
-    max_iters: int = 20000,               # total number of training iterations
+    max_iters: int = 30000,               # total number of training iterations
     weight_decay: float = 1e-1,
     beta1: float = 0.9,
     beta2: float = 0.95,
@@ -64,8 +64,8 @@ def train(
     # learning rate decay settings
     decay_lr: bool = True,                 # whether to decay the learning rate
     warmup_iters: int = 2000,              # how many steps to warm up for
-    lr_decay_iters: int = 20000,          # should be ~= max_iters per Chinchilla
-    min_lr: float = 2e-4,                  # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+    lr_decay_iters: int = 30000,          # should be ~= max_iters per Chinchilla
+    min_lr: float = 4e-4,                  # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
     # DDP settings
     backend: str = 'nccl',                 # 'nccl', 'gloo', etc.
     # system
@@ -140,7 +140,7 @@ def train(
         model = GPT(gptconf)
     elif init_from == 'resume':
         print(f"Resuming training from {out_dir}...")
-        ckpt_path = os.path.join(out_dir, 'bpe_en_train.pt')
+        ckpt_path = os.path.join(out_dir, 'unigram_en_train.pt')
         checkpoint = torch.load(ckpt_path, map_location="cpu")
         checkpoint = torch.load(ckpt_path, map_location=device)
         checkpoint_model_args = checkpoint['model_args']
@@ -276,7 +276,7 @@ def train(
                         'config': config,
                     }
                     print(f"saving checkpoint to {out_dir}")
-                    torch.save(checkpoint, os.path.join(out_dir, 'bpe_en_train.pt'))
+                    torch.save(checkpoint, os.path.join(out_dir, 'unigram_en_train.pt'))
         if iter_num == 0 and eval_only:
             break
 
