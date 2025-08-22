@@ -109,10 +109,10 @@ def run_hellaswag_only(scorer: LocalScorer, split: str = "validation", limit: Op
 
 def main():
     tok_env = os.environ.get("TOKENIZER_JSON", "")
-    tokenizer_json = tok_env if tok_env else os.path.join("tokenizers/bpe/en", "tokenizer.json")
+    tokenizer_json = tok_env if tok_env else os.path.join(".gitignore/tokenizers/bpe/en", "tokenizer.json")
     tok = Tok(tokenizer_json)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ckpt = _load_checkpoint("out", map_location="cpu")
+    ckpt = _load_checkpoint(".gitignore/out", map_location="cpu")
     model = _init_model_from_checkpoint(ckpt, device=device)
     scorer = LocalScorer(model=model, tok=tok, device=device)
     results = run_hellaswag_only(scorer, split="validation", limit=None)
