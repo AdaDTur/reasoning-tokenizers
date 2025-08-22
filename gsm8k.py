@@ -73,7 +73,7 @@ class LocalGenerator:
         return text.strip()
 
 def _load_checkpoint(out_dir: str, map_location: str):
-    ckpt_path = os.path.join(out_dir, "bpe_en_train.pt")
+    ckpt_path = os.path.join(out_dir, "wordpiece_en_train.pt")
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
     return torch.load(ckpt_path, map_location=map_location)
@@ -147,14 +147,15 @@ def run_gsm8k_only(gen: LocalGenerator, limit: Optional[int] = None) -> Dict[str
 
 def main():
     tok_env = os.environ.get("TOKENIZER_JSON", "")
-    tokenizer_json = tok_env if tok_env else os.path.join("tokenizers/bpe/en", "tokenizer.json")
+    tokenizer_json = tok_env if tok_env else os.path.join(".gitignore/tokenizers/wordpiece/en", "tokenizer.json")
     tok = Tok(tokenizer_json)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ckpt = _load_checkpoint("out", map_location="cpu")
+    ckpt = _load_checkpoint(".gitignore/out", map_location="cpu")
     model = _init_model_from_checkpoint(ckpt, device=device)
     gen = LocalGenerator(model=model, tok=tok, device=device)
     results = run_gsm8k_only(gen, limit=None)
-    print(json.dumps(results, indent=2, sort_keys=True))
+    with open('results/wordpiece_gsm8k.json', 'w') as fp:
+        json.dump(results, fp, indent=2)
 
 if __name__ == "__main__":
     main()
