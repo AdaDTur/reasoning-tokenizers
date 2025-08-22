@@ -44,7 +44,7 @@ class LocalScorer:
         return total
 
 def _load_checkpoint(out_dir: str, map_location: str):
-    ckpt_path = os.path.join(out_dir, "bpe_en_train.pt")
+    ckpt_path = os.path.join(out_dir, "wordpiece_en_train.pt")
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
     return torch.load(ckpt_path, map_location=map_location)
@@ -133,15 +133,15 @@ def run_mmlu_only(scorer: LocalScorer, limit_per_subset: Optional[int] = None) -
 
 def main():
     tok_env = os.environ.get("TOKENIZER_JSON", "")
-    tokenizer_json = tok_env if tok_env else os.path.join("tokenizers/bpe/en", "tokenizer.json")
+    tokenizer_json = tok_env if tok_env else os.path.join("tokenizers/wordpiece/en", "tokenizer.json")
     tok = Tok(tokenizer_json)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ckpt = _load_checkpoint("out", map_location="cpu")
     model = _init_model_from_checkpoint(ckpt, device=device)
     scorer = LocalScorer(model=model, tok=tok, device=device)
     results = run_mmlu_only(scorer, limit_per_subset=None)
-    with open('output.json', 'w') as fp:
-        json.dumps(results, fp, indent=2, sort_keys=True)
+    with open('wordpiece_mmlu.json', 'w') as fp:
+        json.dump(results, fp, indent=2)
 
 if __name__ == "__main__":
     main()
