@@ -88,15 +88,24 @@ def batch_iter_texts_flexible(ds_split, kind, batch_size=1000):
         m = len(batch[cols[0]]) if len(cols) else 0
         yield [builder(batch, j) for j in range(m)]
 
-def combined_corpus_iter(culturax_ds, gsm8k_ds, mbpp_ds, char_limit, batch_size=1000):
+def combined_corpus_iter(culturax_ds, gsm8k_ds, mbpp_ds, char_limit, batch_size=1000, max_sentence_length=1000):
     for batch in culturaX_with_char_limit(culturax_ds, char_limit=char_limit, batch_size=batch_size):
-        yield batch
+        # Filter out sentences that are too long
+        filtered_batch = [text for text in batch if len(text) <= max_sentence_length]
+        if filtered_batch:
+            yield filtered_batch
     if gsm8k_ds is not None and 'train' in gsm8k_ds:
         for batch in batch_iter_texts_flexible(gsm8k_ds['train'], kind="gsm8k", batch_size=batch_size):
-            yield batch
+            # Filter out sentences that are too long
+            filtered_batch = [text for text in batch if len(text) <= max_sentence_length]
+            if filtered_batch:
+                yield filtered_batch
     if mbpp_ds is not None and 'train' in mbpp_ds:
         for batch in batch_iter_texts_flexible(mbpp_ds['train'], kind="mbpp", batch_size=batch_size):
-            yield batch
+            # Filter out sentences that are too long
+            filtered_batch = [text for text in batch if len(text) <= max_sentence_length]
+            if filtered_batch:
+                yield filtered_batch
 
 def create_bin_files(name, lang, tokenizer, iterator, train_split=0.9):
     all_tokens = []
@@ -111,9 +120,9 @@ def create_bin_files(name, lang, tokenizer, iterator, train_split=0.9):
     split_idx = int(len(all_tokens) * train_split)
     train_tokens = all_tokens[:split_idx]
     val_tokens = all_tokens[split_idx:]
-    os.makedirs('tokenizer_bins', exist_ok=True)
-    train_tokens.tofile(f'tokenizer_bins/{name}_{lang}_train.bin')
-    val_tokens.tofile(f'tokenizer_bins/{name}_{lang}_val.bin')
+    os.makedirs(f'.gitignore/tokenizers/{name}/{lang}/', exist_ok=True)
+    train_tokens.tofile(f'.gitignore/tokenizers/{name}/{lang}/{name}_{lang}_train.bin')
+    val_tokens.tofile(f'.gitignore/tokenizers/{name}/{lang}/{name}_{lang}_val.bin')
     print(f"Training tokens: {len(train_tokens):,}")
     print(f"Validation tokens: {len(val_tokens):,}")
 
@@ -154,7 +163,7 @@ def wordpiece(corpus_iterator, lang):
     wrapped.save_pretrained(f".gitignore/tokenizers/wordpiece/wordpiece_{lang}")
     return wrapped
 
-def unigram(corpus_iterator, lang):
+def unigram(corpus_iterator, lang, max_sentence_length=10000):
     print("Starting Unigram training")
     tokenizer = Tokenizer(models.Unigram())
     tokenizer.normalizer = normalizers.Sequence(
@@ -172,7 +181,15 @@ def unigram(corpus_iterator, lang):
         vocab_size=25000, special_tokens=special_tokens, unk_token="<unk>"
     )
     tokenizer.model = models.Unigram()
-    tokenizer.train_from_iterator(corpus_iterator, trainer=trainer)
+    
+    filtered_corpus = []
+    for batch in corpus_iterator:
+        for text in batch:
+            if len(text) <= max_sentence_length:
+                filtered_corpus.append(text)
+    
+    print(f"Training on {len(filtered_corpus)} sentences (filtered from original corpus)")
+    tokenizer.train_from_iterator(filtered_corpus, trainer=trainer)
     print("Finished Unigram training")
     cls_id = tokenizer.token_to_id("<cls>")
     sep_id = tokenizer.token_to_id("<sep>")
@@ -182,6 +199,21 @@ def unigram(corpus_iterator, lang):
         special_tokens=[("<sep>", sep_id), ("<cls>", cls_id)],
     )
     tokenizer.decoder = decoders.Metaspace()
+    
+    # Save the tokenizer
+    wrapped = PreTrainedTokenizerFast(
+        tokenizer_object=tokenizer,
+        unk_token="<unk>",
+        pad_token="<pad>",
+        cls_token="<cls>",
+        sep_token="<sep>",
+        mask_token="<mask>",
+        bos_token="<s>",
+        eos_token="</s>",
+    )
+    os.makedirs(f".gitignore/tokenizers/unigram/{lang}", exist_ok=True)
+    wrapped.save_pretrained(f".gitignore/tokenizers/unigram/{lang}")
+    return wrapped
 
 def char_level(corpus_iterator, lang):
     specials = ["<unk>"]
@@ -214,12 +246,13 @@ if __name__ == "__main__":
             gsm8k_ds,
             mbpp_ds,
             char_limit=10_000_000_000,
-            batch_size=1000
+            batch_size=1000,
+            max_sentence_length=1000
         )
 
-        tok = unigram(corpus_iter, lang)
+        tok = unigram(corpus_iter, lang, max_sentence_length=1000)
 
         corpus_iter_for_bins = combined_corpus_iter(
-            culturax_ds, gsm8k_ds, mbpp_ds, char_limit=10_000_000_000, batch_size=1000
+            culturax_ds, gsm8k_ds, mbpp_ds, char_limit=10_000_000_000, batch_size=1000, max_sentence_length=1000
         )
         create_bin_files('unigram', lang, tok, corpus_iter_for_bins, train_split=0.9)
