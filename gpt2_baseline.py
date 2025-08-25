@@ -132,11 +132,13 @@ def run_hellaswag(scorer: HFScorer, limit: Optional[int] = None) -> Dict[str, An
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     scorer = HFScorer(model_name="openai-community/gpt2", device=device)
-    gsm8k = run_gsm8k(scorer, limit=None)
+    #gsm8k = run_gsm8k(scorer, limit=None)
     hellaswag = run_hellaswag(scorer, limit=None)
-    with open('gpt2_mmlu.json', 'w') as fp:
+    #with open('gpt2_mmlu.json', 'w') as fp:
+        #json.dump(mmlu, fp, indent=2)
+    with open('gpt2_gsm8k.json', 'w') as fp:
         json.dump(gsm8k, fp, indent=2)
-    with open('gpt2_mmlu.json', 'w') as fp:
+    with open('gpt2_hellaswag.json', 'w') as fp:
         json.dump(hellaswag, fp, indent=2)
 
 if __name__ == "__main__":
