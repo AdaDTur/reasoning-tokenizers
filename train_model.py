@@ -39,11 +39,11 @@ def train(
     # wandb logging
     wandb_log: bool = True,               # disabled by default
     wandb_project: str = 'reasoning-tokenizers',
-    wandb_run_name: str = 'unigram-en',          # 'run' + str(time.time())
+    wandb_run_name: str = 'wordpiece-tr',          # 'run' + str(time.time())
     # data
-    dataset: str = '.gitignore/tokenizers/unigram/en',
-    tokenized_training_input_file: str = 'unigram_en_train.bin',
-    tokenized_validation_input_file: str = 'unigram_en_val.bin',
+    dataset: str = '.gitignore/tokenizers/wordpiece/tr',
+    tokenized_training_input_file: str = 'wordpiece_tr_train.bin',
+    tokenized_validation_input_file: str = 'wordpiece_tr_val.bin',
     gradient_accumulation_steps: int = 40, # 5 * 8, used to simulate larger batch sizes
     batch_size = 12,                       # if gradient_accumulation_steps > 1, this is the micro-batch size
     block_size = 1024,
@@ -55,7 +55,7 @@ def train(
     dropout: float = 0.0,                  # for pretraining 0 is good, for finetuning try 0.1+
     bias: bool = False,                    # do we use bias inside LayerNorm and Linear layers?
     # adamw optimizer
-    learning_rate: float = 6e-4,           # max learning rate
+    learning_rate: float = 6e-5,           # max learning rate
     max_iters: int = 30000,               # total number of training iterations
     weight_decay: float = 1e-1,
     beta1: float = 0.9,
@@ -65,7 +65,7 @@ def train(
     decay_lr: bool = True,                 # whether to decay the learning rate
     warmup_iters: int = 2000,              # how many steps to warm up for
     lr_decay_iters: int = 30000,          # should be ~= max_iters per Chinchilla
-    min_lr: float = 4e-4,                  # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+    min_lr: float = 6e-4,                  # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
     # DDP settings
     backend: str = 'nccl',                 # 'nccl', 'gloo', etc.
     # system
@@ -140,7 +140,7 @@ def train(
         model = GPT(gptconf)
     elif init_from == 'resume':
         print(f"Resuming training from {out_dir}...")
-        ckpt_path = os.path.join(out_dir, 'unigram_en_train.pt')
+        ckpt_path = os.path.join(out_dir, 'wordpiece_tr_train.pt')
         checkpoint = torch.load(ckpt_path, map_location="cpu")
         checkpoint = torch.load(ckpt_path, map_location=device)
         checkpoint_model_args = checkpoint['model_args']
@@ -276,7 +276,7 @@ def train(
                         'config': config,
                     }
                     print(f"saving checkpoint to {out_dir}")
-                    torch.save(checkpoint, os.path.join(out_dir, 'unigram_en_train.pt'))
+                    torch.save(checkpoint, os.path.join(out_dir, 'wordpiece_tr_train.pt'))
         if iter_num == 0 and eval_only:
             break
 
